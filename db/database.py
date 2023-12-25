@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 import os
 from dotenv import load_dotenv
 from contextlib import closing
+
 pymysql.install_as_MySQLdb()
 
 

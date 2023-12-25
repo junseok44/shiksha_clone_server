@@ -21,7 +21,6 @@ router = APIRouter(
 class AuthForm(BaseModel):
     user_id: str
     password: str
-    username: str
 
     @validator("user_id")
     def user_id_validator(cls, v):
@@ -29,7 +28,7 @@ class AuthForm(BaseModel):
             raise HTTPException(status_code=422, detail="user_id must be longer than 4")
         return v
     
-    @validator("user_id", "password", "username")
+    @validator("user_id", "password")
     def is_empty(cls, v):
         if len(v) == 0:
             raise HTTPException(status_code=422, detail="user_id, password, username must not be empty")
@@ -95,7 +94,7 @@ async def signup(userForm: AuthForm):
         if user:
             raise HTTPException(status_code=409, detail="user_id already exists")
         
-        newUser = create_user(userForm.user_id, userForm.password, userForm.username, db)
+        newUser = create_user(userForm.user_id, userForm.password, None, db)
         return {
             "result" : "success",
             "user_id" : newUser.user_id,
@@ -117,10 +116,55 @@ async def login(loginForm: LoginForm):
             'user_id': user.user_id,
         },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
+        refresh_token_expires = timedelta(days=30)
+        refresh_token = jwt.encode({
+            'exp': refresh_token_expires.total_seconds(),
+            'user_id': user.user_id,
+        },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
-        return JWTToken(
-            access_token=access_token,
-            token_type="bearer")
+
+        return {
+            "result" : "success",
+            "user_id" : user.user_id,
+            "username" : user.username,
+            "access_token" : access_token,
+            "refresh_token" : refresh_token,
+        }
+
+
+# 미들웨어로 옮겨줄것.
+@router.post("/validate")
+async def validate(token: str,user_id: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload['user_id'] != user_id:
+            raise HTTPException(status_code=401, detail="user_id not match")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="token invalid")
+    
+    return {
+        "result" : "success"
+    }
+
+@router.post("/refresh")
+async def refresh(refresh_token: str):
+    try:
+        payload = jwt.decode(refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id = payload['user_id']
+    except JWTError:
+        raise HTTPException(status_code=401, detail="token invalid")
+    
+    access_token_expires = timedelta(minutes=int(JWT_EXPIRE_MINUTES))
+    access_token = jwt.encode({
+        'exp': access_token_expires.total_seconds(),
+        'user_id': user_id,
+    },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    return {
+        "result" : "success",
+        "access_token" : access_token,
+    }
+
 
 @router.get("/logout")
 async def logout():
