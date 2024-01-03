@@ -155,7 +155,6 @@ async def validate(token: str,user_id: str):
 async def refresh(req: RefreshRequest):
     try:
         refresh_token = req.refresh_token
-        print(refresh_token)
         payload = jwt.decode(refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
     except JWTError as e:

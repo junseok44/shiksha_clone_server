@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from db.database import get_db
 from db.model import Review,Menu
 from sqlalchemy import select   
 from pydantic import BaseModel
+from typing import Annotated
+from services.jwt import get_user_id_by_token
 
 router = APIRouter(
     prefix="/review", 
@@ -10,7 +12,6 @@ router = APIRouter(
 
 class TReview(BaseModel):    
     menuId: int
-    writerId: int
     text: str
     rating: int
 
@@ -43,17 +44,29 @@ async def get_menu_review(menu_id: int):
                     "reviewCount": len(reviews),
                     "likes": 12}
 
+
+
 @router.post("/menu/{menu_id}")
-async def post_menu_review(review: TReview):
+async def post_menu_review(review: TReview, Authorization: Annotated[str | None, Header()]):
     with get_db() as db:
         try:
-            review = Review(**review.model_dump())
+            if not Authorization:
+                return HTTPException(status_code=401, detail="Invalid Token")
+            Authorization = Authorization.split(" ")[1]
+            user_id = get_user_id_by_token(Authorization)
+
+            if not user_id:
+                return HTTPException(status_code=401, detail="Invalid Token")
+
+            review = Review(menuId=review.menuId, text=review.text, rating=review.rating, writerId=1)
             db.add(review)
             db.commit()
+
+            return {"message": "success"}
+
         except:
             return HTTPException(status_code=400, detail="Invalid Request")
-        else:
-            return {"message": "Hello World"}
+
 
 @router.delete("/menu/{menu_id}")   
 async def delete_menu_review(menu_id: int):
