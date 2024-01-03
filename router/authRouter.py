@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import os
 from datetime import timedelta
 from jose import JWTError, jwt
+from datetime import datetime
 
 load_dotenv(verbose=True)
 
@@ -87,6 +88,10 @@ class JWTToken(BaseModel):
     token_type: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/signup")
 async def signup(userForm: AuthForm):
     with get_db() as db:
@@ -112,13 +117,13 @@ async def login(loginForm: LoginForm):
 
         access_token_expires = timedelta(minutes=int(JWT_EXPIRE_MINUTES))
         access_token = jwt.encode({
-            'exp': access_token_expires.total_seconds(),
+            'exp': datetime.utcnow().timestamp() + access_token_expires.total_seconds(),
             'user_id': user.user_id,
         },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
+        
         refresh_token_expires = timedelta(days=30)
         refresh_token = jwt.encode({
-            'exp': refresh_token_expires.total_seconds(),
+            'exp': datetime.utcnow().timestamp() + refresh_token_expires.total_seconds(),
             'user_id': user.user_id,
         },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -147,23 +152,34 @@ async def validate(token: str,user_id: str):
     }
 
 @router.post("/refresh")
-async def refresh(refresh_token: str):
+async def refresh(req: RefreshRequest):
     try:
+        refresh_token = req.refresh_token
+        print(refresh_token)
         payload = jwt.decode(refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        user_id = payload['user_id']
-    except JWTError:
+
+    except JWTError as e:
+        print(e)
         raise HTTPException(status_code=401, detail="token invalid")
     
-    access_token_expires = timedelta(minutes=int(JWT_EXPIRE_MINUTES))
-    access_token = jwt.encode({
-        'exp': access_token_expires.total_seconds(),
-        'user_id': user_id,
-    },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    user_id = payload['user_id']
+    print(user_id)
+    with get_db() as db:
+        user_query = get_user_by_user_id(user_id, db)
+        if not user_query:
+            raise HTTPException(status_code=404, detail="user_id not found")
+        
+        access_token_expires = timedelta(minutes=int(JWT_EXPIRE_MINUTES))
+        access_token = jwt.encode({
+            'exp': datetime.utcnow().timestamp() + access_token_expires.total_seconds(),
+            'user_id': user_id,
+        },JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+        
+        return {
+            "result" : "success",
+            "access_token" : access_token,
+        }
 
-    return {
-        "result" : "success",
-        "access_token" : access_token,
-    }
 
 
 @router.get("/logout")
